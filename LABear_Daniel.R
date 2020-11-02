@@ -1,7 +1,7 @@
 #This file will perform a step analysis for male and female black bears radiocollared in Louisiana
 #Joe Clark- 9/1/2020
 
-setwd ("D:/Google Drive/JCLARK/BEAR/Louisiana/Joe-GPS collar data/Corridor analysis UTM")
+setwd ("/Volumes/My Passport/Bear Research/CapstoneA")
 getwd()
 
 
@@ -271,29 +271,35 @@ M831_steps <- M831_steps %>% random_steps(n = 9)
 library(raster)
 
 #Distance to nearest agriculture
-disag<-raster("E:/ARCGIS DATA/Louisiana/stepselection/dist_ag_2")
+disag<-raster("/Volumes/My Passport/Bear Research/CapstoneA/disag.tif")
 names(disag)<-"disag"
 plot(disag)
 #Distance to nearest forest
-disfor<-raster("E:/ARCGIS DATA/Louisiana/stepselection/dist_for_4")
+disfor<-raster("/Volumes/My Passport/Bear Research/CapstoneA/disfor.tif")
 names(disfor)<-"disfor"
+plot(disfor)
 #Distance to nearest natural (forest, shrubs, wetlands, etc.)
-disnat<-raster("E:/ARCGIS DATA/Louisiana/stepselection/dist_nat_4")
+disnat<-raster("/Volumes/My Passport/Bear Research/CapstoneA/disnat.tif")
 names(disnat)<-"disnat"
+plot(disnat)
 #Distance to nearest road
-disrd<-raster("E:/ARCGIS DATA/Louisiana/stepselection/dist_rds_3")
+disrd<-raster("/Volumes/My Passport/Bear Research/CapstoneA/disrd.tif")
 names(disrd)<-"disrd"
+plot(disrd)
 #Distance to nearest water
-diswat<-raster("E:/ARCGIS DATA/Louisiana/stepselection/dist_water")
+diswat<-raster("/Volumes/My Passport/Bear Research/CapstoneA/diswat.tif")
 names(diswat)<-"diswat"
+plot(diswat)
 #Density of natural cover types (percent - 0 to 1)
-natden<-raster("E:/ARCGIS DATA/Louisiana/stepselection/nat_den_5")
+natden<-raster("/Volumes/My Passport/Bear Research/CapstoneA/natden.tif")
 names(natden)<-"natden"
+plot(natden)
 #Density of forest cover types (percent - 0 to 1)
-forden<-raster("E:/ARCGIS DATA/Louisiana/stepselection/for_den_3")
+forden<-raster("/Volumes/My Passport/Bear Research/CapstoneA/forden.tif")
 names(forden)<-"forden"
+plot(forden)
 #Density of roads (percent - 0 to 1)
-rdden<-raster("E:/ARCGIS DATA/Louisiana/stepselection/rd_dens")
+rdden<-raster("/Volumes/My Passport/Bear Research/CapstoneA/rdden.tif")
 names(rdden)<-"rdden"
 plot(rdden) 
 ####################################################
@@ -314,6 +320,7 @@ covariate_extraction<-function(data){
 
 covariate_extraction(M1_steps)
 M1_steps<-bear
+
 M1_steps$ID<-"1"
 summary(M1_steps)
 covariate_extraction(M1_steps)
@@ -574,7 +581,7 @@ summary(MM.2) #disfor significant 8.25e-09 ***
 AIC(MM.2) #    
 
 female.ssf.model1 <- clogit(OBSERVED ~ disnatEND + disagEND + distrdsEND +  disnatEND*distrdsEND + disnatEND*disagEND + cluster(CLUSTER)
-		 + strata(STRATUM), data=femaleclean3, method='approximate')
+		 + strata(STRATUM), data=femaleclean4, method='approximate')
 female.Global.2 <- clogit(OBSERVED ~ disagEND + disnatEND + distrdsEND + 
 	disnatEND*distrdsEND + disnatEND*disagEND + cluster(CLUSTER) + strata(STRATUM), data=femalecleannoNA, 
 	method='approximate', na.action = na.fail)
@@ -621,7 +628,7 @@ stdxbetaf=(coef(female.ssf.model1)*sdxf)
 
 
 #model for season
-femaleclean4 <- read.csv("./stepselection/femaleclean4.csv", header=TRUE, sep=",")
+femaleclean4 <- read.csv("/Volumes/My Passport/Bear Research/CapstoneA/femaleclean4.csv", header=TRUE, sep=",")
 attach(femaleclean4)
 femaleclean4$season[month > 11] <- 0
  femaleclean4$season[month > 6 & month <= 11] <- 1
@@ -636,7 +643,7 @@ female.seasontemp <- clogit(OBSERVED ~ disnatEND + disagEND + distrdsEND +  disn
 #summary(female.season)
 #summary(femaledat4)
 (xtabs(~disagEND+season, data=femaleclean4))
-)
+
 #####to estimate robust SEs######
 femaleclean2$resid<-residuals(female.ssf.model3,type="deviance")
 tempresidtotF<-by(femaleclean2,femaleclean2$STRATUM,function(x) sum(x$resid))
@@ -740,7 +747,7 @@ male.ssf.model <- clogit(OBSERVED ~ disnatEND + disagEND +  distrdsEND +  disnat
     + I(disnatEND^2) + I(distrdsEND^2) + strata(STRATUM)+ cluster(CLUSTER), data=maleclean3, method='approximate')
 
 #model for season
-maleclean4 <- read.csv("D:/Google Drive/JCLARK/BEAR/Louisiana/stepselection/stepselection/maleclean4.csv", header=TRUE, sep=",")
+maleclean4 <- read.csv("/Volumes/My Passport/Bear Research/CapstoneA/maleclean4.csv", header=TRUE, sep=",")
 attach(maleclean4)
 maleclean4$season[month > 11] <- 0
  maleclean4$season[month > 6 & month <= 11] <- 1
@@ -750,6 +757,15 @@ summary(maleclean4)
 male.season <- clogit(OBSERVED ~ disnatEND + disagEND +  distrdsEND + season + disnatEND*disagEND + 
     + I(disnatEND^2) + I(distrdsEND^2) + disagEND*season  + strata(STRATUM)+ cluster(CLUSTER), data=maleclean4, method='approximate')
 
+femaleclean4 <- read.csv("/Volumes/My Passport/Bear Research/CapstoneA/femaleclean4.csv", header=TRUE, sep=",")
+attach(femaleclean4)
+femaleclean4$season[month > 11] <- 0
+femaleclean4$season[month > 6 & month <= 11] <- 1
+femaleclean4$season[month <= 6] <- 0
+detach(femaleclean4) 
+summary(femaleclean4)
+female.season <- clogit(OBSERVED ~ disnatEND + disagEND +  distrdsEND + season + disnatEND*disagEND + 
+                        + I(disnatEND^2) + I(distrdsEND^2) + disagEND*season  + strata(STRATUM)+ cluster(CLUSTER), data=femaleclean4, method='approximate')
 
 
 #a random effect model for males
@@ -769,6 +785,24 @@ anova(mrand,mnorand)
 fixed.effects(mrand)
 random.effects(mrand)
 
+library(rgr)
+bothclean5 <- read.csv("/Volumes/My Passport/Bear Research/CapstoneA/bothclean5.csv", header=TRUE, sep=",")
+#bothclean5 <- remove.na(bothclean5, iftell = TRUE)
+attach(bothclean5)
+bothclean5$season[month > 11] <- 0
+bothclean5$season[month > 6 & month <= 11] <- 1
+bothclean5$season[month <= 6] <- 0
+detach(bothclean5) 
+summary(bothclean5)
+both.season <- lm(STEPLENGTH ~ disnatEND + disagEND +  distrdsEND + season + disnatEND*disagEND + 
+                          + I(disnatEND^2) + I(distrdsEND^2) + disagEND*season  + cluster(CLUSTER), data=bothclean5, method='approximate')
+summary(both.season)
+
+both.roads <- lm(distrdsEND ~ disnatEND + disagEND +  distrdsEND + season + disnatEND*disagEND + 
+                    + I(disnatEND^2)  + disagEND*season + Sex  + cluster(CLUSTER), data=bothclean5, method='approximate')
+summary(both.roads)
 
 
+library(adehabitatLT)
 
+as.ltraj(bothclean5, bothclean5$datetime, Bear_ID, typeII = TRUE, slsp = c('remove', 'missing'), infolocs = NULL)
