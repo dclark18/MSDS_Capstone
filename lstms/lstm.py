@@ -103,7 +103,7 @@ class LSTMPipeline:
 
             window_start = window_end - self.window_size
             pred_input = dataset[window_start:window_end]
-            pred_input_reshaped = pred_input.reshape((1, window, 1))
+            pred_input_reshaped = pred_input.reshape((1, self.window_size, 1))
             output = model.predict(pred_input_reshaped)
             outputs.append(output)
 
@@ -131,12 +131,12 @@ class LSTMPipeline:
         # Create predictions and plot. 
         full_data = np.concatenate([train_data, test_data])
         start_idx = len(train_data)
-        outputs = self.predict_model_stage(model, full_data, start_idx, 5)
+        outputs = self.predict_model_stage(model, full_data, start_idx)
 
 
 
 if __name__ == '__main__':
     bear_path = 'femaleclean4.csv'
-    pipeline = LSTMPipeline(bear_path, 7)
+    pipeline = LSTMPipeline(bear_path, 7, 30)
 
     outputs = pipeline.main()
