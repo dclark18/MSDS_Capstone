@@ -18,6 +18,7 @@ class MultiVarLSTM:
     def __init__(self, raw_data: pd.DataFrame):
 
         self.raw_data = raw_data
+        self.window_size = 5
 
     def preprocess(self):
         """
@@ -27,7 +28,7 @@ class MultiVarLSTM:
         Returns:
             Scaled and split dataset for modeling.
         """
-
+        logger.info("Starting preprocessing")
         wandering = ((self.raw_data.STEPLENGTH < 680)
                      & (np.abs(self.raw_data.TURNANGLE) > 45))
 
@@ -47,11 +48,26 @@ class MultiVarLSTM:
         X_train = m.transform(X_train)
         X_test = m.transform(X_test)
 
+        # Return y values as numpy array, not pandas series
+        y_train = y_train.values
+        y_test = y_test.values
+
+        # Reshape data for sequential model
+        train_shape = len(X_train) // self.window_size, self.window_size
+        test_shape = len(X_test) // self.window_size, self.window_size
+
+        X_train = X_train.reshape((*train_shape, X_train.shape[1]))
+        X_test = X_test.reshape((*test_shape, X_test.shape[1]))
+        y_train = y_train.reshape((*train_shape, 1))
+        y_test = y_test.reshape((*test_shape, 1))
+
         return X_train, X_test, y_train, y_test
 
     def fit_model(self,
                   x_train: np.ndarray,
-                  y_train: pd.Series):
+                  y_train: np.ndarray,
+                  x_test: np.ndarray,
+                  y_test: np.ndarray):
         """
         Fit the multivariate LSTM.
 
@@ -59,21 +75,28 @@ class MultiVarLSTM:
             x_train - the preprocessed training data
             y_train - the boolean classification variable
         """
+        logger.info("Fitting the model")
 
-        n_features = x_train.shape[1]
-
-        lstm_model = keras.layers.Sequential()
-
-        lstm_model.add(keras.layers.LSTM(40,
-                                         activation='relu',
-                                         input_shape=(None, n_features),
-                                         stateful=False))
+        lstm_model = keras.models.Sequential()
+        lstm_model.add(keras.layers.LSTM(40))
         lstm_model.add(keras.layers.Dense(1))
+
         lstm_model.compile(optimizer='adam', loss='mse')
 
         # Fit the model
-        lstm_model.fit(x_train, epochs=20)
+        lstm_model.fit(x_train,
+                       y_train,
+                       validation_data=(x_test, y_test),
+                       epochs=20)
         return lstm_model
+
+    def predict_model(self, model, x_test, y_test):
+        """
+        Predict out, and get the summary statistics.
+        """
+
+        scores = model.evaluate(x_test, y_test, verbose=1)
+        return scores
 
     def run(self):
         """
@@ -81,6 +104,11 @@ class MultiVarLSTM:
         """
 
         x_train, x_test, y_train, y_test = self.preprocess()
+
+        lstm_model = self.fit_model(x_train, y_train, x_test, y_test)
+        scores = self.predict_model(lstm_model, x_test, y_test)
+
+        return scores
 
 
 if __name__ == '__main__':
@@ -123,5 +151,6 @@ if __name__ == '__main__':
 
     # Define pipeline and run
     pipeline = MultiVarLSTM(all_bears)
-    dataset = pipeline.preprocess()
-    breakpoint()
+    scores = pipeline.run()
+
+    print(f"LSTM accuracy: {scores:.2f}")

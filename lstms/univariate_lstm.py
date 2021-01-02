@@ -17,7 +17,7 @@ class LSTMPipeline:
         Args:
             data_path: filepath of the bear data to read in
             bear_id: select a particular bear
-            window_size: length of the time series to model. 
+            window_size: length of the time series to model.
                 ex. Based on the last n time steps, predict the next value
         """
 
@@ -71,7 +71,7 @@ class LSTMPipeline:
         length = self.window_size
         generator = TimeseriesGenerator(train, train,
                                         length=length, batch_size=batch_size)
-        
+
         lstm_model = keras.models.Sequential()
         lstm_model.add(layers.LSTM(40, activation='relu',
                                    input_shape=(None, n_features),
@@ -128,7 +128,7 @@ class LSTMPipeline:
         # Fit the LSTM
         model = self.fit_model_stage(train_data)
 
-        # Create predictions and plot. 
+        # Create predictions and plot.
         full_data = np.concatenate([train_data, test_data])
         start_idx = len(train_data)
         outputs = self.predict_model_stage(model, full_data, start_idx)
