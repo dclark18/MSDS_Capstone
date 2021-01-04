@@ -78,6 +78,7 @@ class MultiVarLSTM:
         # Strategy for multiple time series: Split up dataset by bear,
         # and iteratively model
         # Preserve indices for training
+        X_train = X_train.reset_index(drop=True)
         bear_ids = X_train.Bear_ID.unique()
 
         self.bear_ids_dict = {
