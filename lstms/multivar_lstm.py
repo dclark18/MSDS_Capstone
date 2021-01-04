@@ -10,7 +10,38 @@ from loguru import logger
 from tensorflow import keras
 
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
+
+
+def window_data(dataset: np.ndarray, window_size: int):
+    """
+    Given a 2-D numpy array and a window size,
+    chunk the dataset into observations of length window_size
+
+    Args:
+    - dataset: a (m, n) shaped numpy array
+    - window_size: the number of obervations to window over
+
+    Example:
+    dataset = (1003, 20), window_size = 5
+    Output = (200, 5, 20)
+    """
+
+    # Drop the last observations that don't overlap with the window size.
+    max_row = len(dataset) // window_size * window_size
+    dataset = dataset[:max_row]
+
+    # Define the number of chunks
+    num_chunks = len(dataset) // window_size
+
+    # Define n_features
+    try:
+        n_features = dataset.shape[1]
+    except IndexError:
+        n_features = 1
+
+    data_reshaped = dataset.reshape(
+        (num_chunks, window_size, n_features))
+    return data_reshaped
 
 
 class MultiVarLSTM:
@@ -32,12 +63,27 @@ class MultiVarLSTM:
         wandering = ((self.raw_data.STEPLENGTH < 680)
                      & (np.abs(self.raw_data.TURNANGLE) > 45))
 
+        # Hold out arbitrary bear as the test set
+        test_idx = self.raw_data.loc[self.raw_data.Bear_ID == 79].index
+
         x_data = self.raw_data.drop(
             columns=['STEPLENGTH', 'TURNANGLE', 'Unnamed: 0', 'datetime'])
 
-        # Create validation/testing sets
-        X_train, X_test, y_train, y_test = train_test_split(
-            x_data, wandering, test_size=0.2, random_state=42)
+        X_train = x_data.drop(test_idx)
+        y_train = wandering.drop(test_idx)
+
+        X_test = x_data.loc[test_idx]
+        y_test = wandering[test_idx]
+
+        # Strategy for multiple time series: Split up dataset by bear,
+        # and iteratively model
+        # Preserve indices for training
+        bear_ids = X_train.Bear_ID.unique()
+
+        self.bear_ids_dict = {
+            bearid: X_train.loc[X_train.Bear_ID == bearid].index
+            for bearid in bear_ids
+        }
 
         # Fit the minmax scaler
         m = MinMaxScaler()
@@ -52,14 +98,11 @@ class MultiVarLSTM:
         y_train = y_train.values
         y_test = y_test.values
 
-        # Reshape data for sequential model
-        train_shape = len(X_train) // self.window_size, self.window_size
-        test_shape = len(X_test) // self.window_size, self.window_size
-
-        X_train = X_train.reshape((*train_shape, X_train.shape[1]))
-        X_test = X_test.reshape((*test_shape, X_test.shape[1]))
-        y_train = y_train.reshape((*train_shape, 1))
-        y_test = y_test.reshape((*test_shape, 1))
+        # Reshape test data, since it's static.
+        # Training data needs to be reshaped dynamically since shape is
+        # dependent on bear.
+        X_test = window_data(X_test, self.window_size)
+        y_test = window_data(y_test, self.window_size)
 
         return X_train, X_test, y_train, y_test
 
@@ -74,6 +117,8 @@ class MultiVarLSTM:
         Args:
             x_train - the preprocessed training data
             y_train - the boolean classification variable
+            x_test - the reshaped testing data
+            y_test - the boolean reshaped testing data
         """
         logger.info("Fitting the model")
 
@@ -83,11 +128,23 @@ class MultiVarLSTM:
 
         lstm_model.compile(optimizer='adam', loss='mse')
 
-        # Fit the model
-        lstm_model.fit(x_train,
-                       y_train,
-                       validation_data=(x_test, y_test),
-                       epochs=20)
+        # Fit the model. Iterate by bear ID
+        for bear_id, idcs in self.bear_ids_dict.items():
+
+            # Reshape data for sequential model
+            logger.info(f"Training on bear {bear_id}")
+
+            bear_x_data = x_train[idcs]
+            bear_y_data = y_train[idcs]
+
+            xtrain_reshaped = window_data(bear_x_data, self.window_size)
+            ytrain_reshaped = window_data(bear_y_data, self.window_size)
+
+            lstm_model.fit(xtrain_reshaped,
+                           ytrain_reshaped,
+                           validation_data=(x_test, y_test),
+                           epochs=20)
+
         return lstm_model
 
     def predict_model(self, model, x_test, y_test):
@@ -140,14 +197,11 @@ if __name__ == '__main__':
     female_bears = pd.read_csv(Path(data_path) / 'femaleclean4.csv')
 
     # Subset to only observed behavior, and concatenate.
-    all_bears = pd.concat([male_bears, female_bears])
-    all_bears = all_bears.loc[all_bears.OBSERVED == 1]
+    all_bears = pd.concat([male_bears, female_bears], sort=True)
 
-    # Temp: Sample only a couple rows to prevent blowing up RAM
-    np.random.seed(10)
-    random_rows = np.random.randint(low=0, high=len(all_bears), size=500)
-    logger.info("Subsetting 500 rows from data for flexilibity")
-    all_bears = all_bears.iloc[random_rows]
+    # Drop misformatted NAs
+    all_bears = all_bears.loc[~(all_bears.FID.isna())]
+    all_bears.reset_index(inplace=True, drop=True)
 
     # Define pipeline and run
     pipeline = MultiVarLSTM(all_bears)
