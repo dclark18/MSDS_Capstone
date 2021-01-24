@@ -51,10 +51,10 @@ def window_data(dataset: np.ndarray, window_size: int) -> np.ndarray:
 
 class MultiVarLSTM:
 
-    def __init__(self, raw_data: pd.DataFrame):
+    def __init__(self, raw_data: pd.DataFrame, window_size: int):
 
         self.raw_data = raw_data
-        self.window_size = 5
+        self.window_size = window_size
 
     def preprocess(self) -> Tuple[np.ndarray]:
         """
@@ -195,13 +195,9 @@ class MultiVarLSTM:
         self.predict_model(lstm_model, x_test, y_test)
 
 
-if __name__ == '__main__':
+def unpack_data() -> pd.DataFrame:
     """
-    Runs the multivariate LSTM.
-
-    Idea: use all training variables to predict
-    wandering vs. classical behavior
-
+    Unzips the bear data and combines male/female bears into one dataset
     """
 
     # Directory wrangling
@@ -230,6 +226,20 @@ if __name__ == '__main__':
     all_bears = all_bears.loc[~(all_bears.FID.isna())]
     all_bears.reset_index(inplace=True, drop=True)
 
+    return all_bears
+
+
+if __name__ == '__main__':
+    """
+    Runs the multivariate LSTM.
+
+    Idea: use all training variables to predict
+    wandering vs. classical behavior
+
+    """
+
+    all_bears = unpack_data()
+
     # Define pipeline and run
-    pipeline = MultiVarLSTM(all_bears)
+    pipeline = MultiVarLSTM(all_bears, 5)
     pipeline.run()
