@@ -10,6 +10,9 @@ from loguru import logger
 from tensorflow import keras
 
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import roc_curve, auc
+
+import matplotlib.pyplot as plt
 
 
 def window_data(dataset: np.ndarray, window_size: int):
@@ -103,8 +106,9 @@ class MultiVarLSTM:
         # Training data needs to be reshaped dynamically since shape is
         # dependent on bear.
         X_test = window_data(X_test, self.window_size)
-        y_test = window_data(y_test, self.window_size)
-
+        y_test = y_test[
+            range(self.window_size - 1, len(y_test), self.window_size)
+        ]
         return X_train, X_test, y_train, y_test
 
     def fit_model(self,
@@ -125,6 +129,7 @@ class MultiVarLSTM:
 
         lstm_model = keras.models.Sequential()
         lstm_model.add(keras.layers.LSTM(40))
+        # lstm_model.add(keras.layers.Attention())
         lstm_model.add(keras.layers.Dense(1))
 
         lstm_model.compile(optimizer='adam', loss='mse')
@@ -139,7 +144,11 @@ class MultiVarLSTM:
             bear_y_data = y_train[idcs]
 
             xtrain_reshaped = window_data(bear_x_data, self.window_size)
-            ytrain_reshaped = window_data(bear_y_data, self.window_size)
+            # No reshaping of y, all we do is grab
+            # every 5th value if the windowsize = 5
+            ytrain_reshaped = bear_y_data[
+                range(self.window_size - 1, len(bear_y_data), self.window_size)
+            ]
 
             lstm_model.fit(xtrain_reshaped,
                            ytrain_reshaped,
@@ -153,8 +162,29 @@ class MultiVarLSTM:
         Predict out, and get the summary statistics.
         """
 
-        scores = model.evaluate(x_test, y_test, verbose=1)
-        return scores
+        # Raw accuracy
+        accuracy = model.evaluate(x_test, y_test, verbose=1)
+        logger.info(f"Final accuracy is {accuracy:.2f}")
+
+        # Predicted vs. observed
+        y_preds = [1 if x > 0.5 else 0 for x in model.predict(x_test)]
+        y_true = [1 if x else 0 for x in y_test]
+        fpr, tpr, _ = roc_curve(y_true, y_preds)
+        auc_score = auc(fpr, tpr)
+
+        plt.figure()
+        plt.plot(fpr, tpr, color='darkorange', lw=2,
+                 label='ROC curve (area = %0.2f)' % auc_score)
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver operating characteristic example')
+        plt.legend(loc="lower right")
+
+        output_path = Path(os.path.abspath(__file__)).parent
+        plt.savefig(os.path.join(output_path, 'roc_auc_curve.png'))
 
     def run(self):
         """
@@ -164,9 +194,7 @@ class MultiVarLSTM:
         x_train, x_test, y_train, y_test = self.preprocess()
 
         lstm_model = self.fit_model(x_train, y_train, x_test, y_test)
-        scores = self.predict_model(lstm_model, x_test, y_test)
-
-        return scores
+        self.predict_model(lstm_model, x_test, y_test)
 
 
 if __name__ == '__main__':
@@ -206,6 +234,4 @@ if __name__ == '__main__':
 
     # Define pipeline and run
     pipeline = MultiVarLSTM(all_bears)
-    scores = pipeline.run()
-
-    print(f"LSTM accuracy: {scores:.2f}")
+    pipeline.run()
