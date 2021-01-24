@@ -231,7 +231,6 @@ if __name__ == '__main__':
     # Drop misformatted NAs
     all_bears = all_bears.loc[~(all_bears.FID.isna())]
     all_bears.reset_index(inplace=True, drop=True)
-    breakpoint()
 
     # Define pipeline and run
     pipeline = MultiVarLSTM(all_bears)
