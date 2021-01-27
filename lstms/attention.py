@@ -57,6 +57,7 @@ class AttentionModel(MultiVarLSTM):
         fc2 = keras.layers.Dense(312, activation='relu')(fc1)
         output = keras.layers.Dense(1, activation='sigmoid')(fc2)
         attention_model = keras.models.Model(input_layer, output)
+        attention_model.compile(optimizer='adam', loss='mse')
 
         for bear_id, idcs in self.bear_ids_dict.items():
 
@@ -88,7 +89,7 @@ class AttentionModel(MultiVarLSTM):
     def run(self) -> None:
 
         x_train, x_test, y_train, y_test = self.preprocess()
-        attention_model = self.fit_model(x_train, x_test, y_train, y_test)
+        attention_model = self.fit_model(x_train, y_train, x_test, y_test)
 
         self.predict_model(attention_model, x_test, y_test)
 
