@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from zipfile import ZipFile
 from loguru import logger
-
+from typing import Tuple
 
 from tensorflow import keras
 
@@ -15,10 +15,10 @@ from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 
 
-def window_data(dataset: np.ndarray, window_size: int):
+def window_data(dataset: np.ndarray, window_size: int) -> np.ndarray:
     """
     Given a 2-D numpy array and a window size,
-    chunk the dataset into observations of length window_size
+    create striding windows over the dataset.
 
     Args:
     - dataset: a (m, n) shaped numpy array
@@ -26,35 +26,37 @@ def window_data(dataset: np.ndarray, window_size: int):
 
     Example:
     dataset = (1003, 20), window_size = 5
-    Output = (200, 5, 20)
+    Output = (998, 5, 20)
+
+    Explanation: Starting from the 5th observation, create backwards-looking
+    windows of 5 observations each.
+
+    We cannot directly use 1st 4 observations for prediction, since we do not have
+    5 previous time points
     """
 
-    # Drop the last observations that don't overlap with the window size.
-    max_row = len(dataset) // window_size * window_size
-    dataset = dataset[:max_row]
+    # Starting point is 0+window_size
+    # Ending point is the last value
 
-    # Define the number of chunks
-    num_chunks = len(dataset) // window_size
+    # Create a index matrix
+    # Note to DJ: Same approach as for loop + vstack, but vectorized. Idea ripped off from
+    # https://towardsdatascience.com/fast-and-robust-sliding-window-vectorization-with-numpy-3ad950ed62f5
+    array_idx = (
+        0
+        + np.expand_dims(np.arange(window_size), 0)
+        + np.expand_dims(np.arange(len(dataset) - (window_size - 1)), 0).T
+    )
 
-    # Define n_features
-    try:
-        n_features = dataset.shape[1]
-    except IndexError:
-        n_features = 1
-
-    data_reshaped = dataset.reshape(
-        (num_chunks, window_size, n_features))
-    return data_reshaped
-
+    return dataset[array_idx]
 
 class MultiVarLSTM:
 
-    def __init__(self, raw_data: pd.DataFrame):
+    def __init__(self, raw_data: pd.DataFrame, window_size: int):
 
         self.raw_data = raw_data
-        self.window_size = 5
+        self.window_size = window_size
 
-    def preprocess(self):
+    def preprocess(self) -> Tuple[np.ndarray]:
         """
         Standard preprocessing. Define the y variable,
         trim the x variables, train/test split, and min-max scale.
@@ -106,16 +108,14 @@ class MultiVarLSTM:
         # Training data needs to be reshaped dynamically since shape is
         # dependent on bear.
         X_test = window_data(X_test, self.window_size)
-        y_test = y_test[
-            range(self.window_size - 1, len(y_test), self.window_size)
-        ]
+        y_test = y_test[(self.window_size - 1):]
         return X_train, X_test, y_train, y_test
 
     def fit_model(self,
                   x_train: np.ndarray,
                   y_train: np.ndarray,
                   x_test: np.ndarray,
-                  y_test: np.ndarray):
+                  y_test: np.ndarray) -> keras.models.Sequential:
         """
         Fit the multivariate LSTM.
 
@@ -146,9 +146,7 @@ class MultiVarLSTM:
             xtrain_reshaped = window_data(bear_x_data, self.window_size)
             # No reshaping of y, all we do is grab
             # every 5th value if the windowsize = 5
-            ytrain_reshaped = bear_y_data[
-                range(self.window_size - 1, len(bear_y_data), self.window_size)
-            ]
+            ytrain_reshaped = bear_y_data[(self.window_size - 1):]
 
             lstm_model.fit(xtrain_reshaped,
                            ytrain_reshaped,
@@ -157,7 +155,7 @@ class MultiVarLSTM:
 
         return lstm_model
 
-    def predict_model(self, model, x_test, y_test):
+    def predict_model(self, model, x_test, y_test) -> None:
         """
         Predict out, and get the summary statistics.
         """
@@ -186,7 +184,7 @@ class MultiVarLSTM:
         output_path = Path(os.path.abspath(__file__)).parent
         plt.savefig(os.path.join(output_path, 'roc_auc_curve.png'))
 
-    def run(self):
+    def run(self) -> None:
         """
         Run the LSTM
         """
@@ -197,13 +195,9 @@ class MultiVarLSTM:
         self.predict_model(lstm_model, x_test, y_test)
 
 
-if __name__ == '__main__':
+def unpack_data() -> pd.DataFrame:
     """
-    Runs the multivariate LSTM.
-
-    Idea: use all training variables to predict
-    wandering vs. classical behavior
-
+    Unzips the bear data and combines male/female bears into one dataset
     """
 
     # Directory wrangling
@@ -232,6 +226,20 @@ if __name__ == '__main__':
     all_bears = all_bears.loc[~(all_bears.FID.isna())]
     all_bears.reset_index(inplace=True, drop=True)
 
+    return all_bears
+
+
+if __name__ == '__main__':
+    """
+    Runs the multivariate LSTM.
+
+    Idea: use all training variables to predict
+    wandering vs. classical behavior
+
+    """
+
+    all_bears = unpack_data()
+
     # Define pipeline and run
-    pipeline = MultiVarLSTM(all_bears)
+    pipeline = MultiVarLSTM(all_bears, 5)
     pipeline.run()
