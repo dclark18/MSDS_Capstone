@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 
-from loguru import logger
 from typing import Tuple, Any
 
 from sklearn.preprocessing import MinMaxScaler
@@ -35,7 +34,6 @@ class TimeSeriesPipeline:
         Returns:
             x and y data as numpy arrays
         """
-        logger.info("Starting preprocessing")
 
         # Need to drop non-observed points
         observed = self.raw_data.loc[self.raw_data.OBSERVED == 1]
@@ -125,3 +123,9 @@ class TimeSeriesPipeline:
             keras.backend.clear_session()
 
         return predicted, observed
+
+    def fit_model(self, *args, **kwargs):
+        """
+        Each pipeline needs its own fit call.
+        """
+        raise NotImplementedError
