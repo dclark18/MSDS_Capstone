@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from loguru import logger
 
 from typing import Tuple, Any
 
@@ -77,6 +78,8 @@ class TimeSeriesPipeline:
 
         for holdout_id in x_data.index.unique():
 
+            logger.info(f"Holdout bear: {holdout_id}")
+
             # Holdout ID is the one bear ID to be used as a holdout set
             x_test = x_data.loc[holdout_id]
             y_test = y_data.loc[holdout_id]
@@ -96,8 +99,11 @@ class TimeSeriesPipeline:
             # y test vals come out as numpy array
             y_test = y_test.values[(self.window_size - 1):]
 
-            # Inner loop: go over each remaining ID to scale+fit the model
-            for bear_id in x_train.index:
+            # Inner loop: go over each remaining ID,
+            # create stacks of windows to scale+fit the model
+            x_train_all = None
+            ytrain_all = None
+            for bear_id in x_train.index.unique():
 
                 xtrain_subset = x_train.loc[bear_id]
                 ytrain_subset = y_train.loc[bear_id].values[(self.window_size - 1):]
@@ -106,21 +112,32 @@ class TimeSeriesPipeline:
                 xtrain_scaled = window_data(
                     m.transform(xtrain_subset), self.window_size)
 
-                # Finally get around to fitting the model
-                model.fit(
-                    xtrain_scaled,
-                    ytrain_subset,
-                    validation_data=(x_test, y_test),
-                    epochs=20)
+                if x_train_all is None:
+                    x_train_all = xtrain_scaled
+                else:
+                    x_train_all = np.concatenate((x_train_all, xtrain_scaled))
 
-                # Predict out labels, compare to observed
-                predictions = model.predict(x_test)
+                if ytrain_all is None:
+                    ytrain_all = ytrain_subset
+                else:
+                    ytrain_all = np.concatenate((ytrain_all, ytrain_subset))
 
-                predicted = np.append(predicted, predictions)
-                observed = np.append(observed, ytrain_subset)
+            # Finally get around to fitting the model
+            model.fit(
+                x_train_all,
+                ytrain_all,
+                validation_data=(x_test, y_test),
+                epochs=20,
+                shuffle=False)
+
+            # Predict out labels, compare to observed
+            predictions = model.predict(x_test)
+
+            predicted = np.append(predicted, predictions)
+            observed = np.append(observed, ytrain_subset)
 
             # For a new holdout set, we need to reset the model
-            keras.backend.clear_session()
+            model.reset_states()
 
         return predicted, observed
 
