@@ -5,9 +5,40 @@ from loguru import logger
 from typing import Tuple, Any
 
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow import keras
+import keras
+import tensorflow.python.keras.backend as K
 
 from utils import window_data
+
+
+# Define reset weights method
+def reset_weights(
+    model: Any,
+    weights: np.ndarray
+) -> None:
+    """Reset the weights of a keras model
+
+    Branch behavior: since sequential models don't have weights before
+    fit is called, we need to re-initialize the layers manually
+
+    Args:
+        model - a Keras model
+        weights - the initial weights of the model. If accessible pre-fit,
+            simply set the model weights. Otherwise iteratively initialize the
+            model layer weights.
+    """
+    if weights:
+        model.set_weights(weights)
+    else:
+        session = K.get_session()
+        for layer in model.layers:
+            if isinstance(layer, keras.engine.network.Network):
+                reset_weights(layer, None)
+                continue
+            for v in layer.__dict__.values():
+                if hasattr(v, 'initializer'):
+                    if v.initializer is not None:
+                        v.initializer.run(session=session)
 
 
 class TimeSeriesPipeline:
@@ -76,6 +107,13 @@ class TimeSeriesPipeline:
         predicted = np.array([])
         observed = np.array([])
 
+        try:
+            initial_weights = model.get_weights()
+        except ValueError:
+            # Sequential models don't have weights initially,
+            # need to reset manually
+            initial_weights = None
+
         for holdout_id in x_data.index.unique():
 
             logger.info(f"Holdout bear: {holdout_id}")
@@ -137,7 +175,8 @@ class TimeSeriesPipeline:
             observed = np.append(observed, ytrain_subset)
 
             # For a new holdout set, we need to reset the model
-            model.reset_states()
+            reset_weights(model, initial_weights)
+            breakpoint()
 
         return predicted, observed
 
