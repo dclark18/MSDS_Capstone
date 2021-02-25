@@ -45,7 +45,7 @@ def unpack_data() -> pd.DataFrame:
 
     # Directory wrangling
     wd = os.path.abspath(__file__)
-    top_level_path = Path(wd).parent.parent
+    top_level_path = Path(wd).parent
     data_path = Path(top_level_path) / 'data'
 
     # Extract the male/female data if not already extracted
