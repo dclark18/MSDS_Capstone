@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from pathlib import Path
 import os
 
@@ -9,10 +8,9 @@ from typing import Tuple
 
 from tensorflow import keras
 from keras import backend as K
-from sklearn.metrics import roc_curve, auc
 
 from TimeSeriesPipeline import TimeSeriesPipeline
-from utils import unpack_data
+from utils import unpack_data, plot_model
 
 
 def attention_simple(inputs: np.ndarray, n_time: int) -> keras.layers.Lambda:
@@ -74,26 +72,15 @@ class AttentionModel(TimeSeriesPipeline):
         """
         Given labels, return the accuracy and a ROC curve.
         """
-
-        # Predicted vs. observed
-        y_preds = [1 if x > 0.5 else 0 for x in predicted]
-        y_true = observed
-        fpr, tpr, _ = roc_curve(y_true, y_preds)
-        auc_score = auc(fpr, tpr)
-
-        plt.figure()
-        plt.plot(fpr, tpr, color='darkorange', lw=2,
-                 label='ROC curve (area = %0.2f)' % auc_score)
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title(f'ROC Curve for Attention model, window size of {self.window_size}')
-        plt.legend(loc="lower right")
-
         output_path = Path(os.path.abspath(__file__)).parent
-        plt.savefig(os.path.join(output_path, 'multivar_roc_curve.png'))
+        df_path = output_path / 'attention_predictions.csv'
+        plot_path = output_path / 'attention_plot.png'
+        plot_model(
+            predicted=predicted,
+            observed=observed,
+            title=f'ROC Curve for Attention Model, Window Size of {self.window_size}',
+            df_output_path=df_path,
+            plot_output_path=plot_path)
 
     def run(self) -> None:
         """

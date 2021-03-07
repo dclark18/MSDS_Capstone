@@ -172,11 +172,10 @@ class TimeSeriesPipeline:
             predictions = model.predict(x_test)
 
             predicted = np.append(predicted, predictions)
-            observed = np.append(observed, ytrain_subset)
+            observed = np.append(observed, y_test)
 
             # For a new holdout set, we need to reset the model
             reset_weights(model, initial_weights)
-            breakpoint()
 
         return predicted, observed
 

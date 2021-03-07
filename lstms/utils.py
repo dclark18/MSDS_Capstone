@@ -6,6 +6,11 @@ from pathlib import Path
 from zipfile import ZipFile
 from loguru import logger
 
+from typing import Union
+
+from sklearn.metrics import roc_curve, auc, accuracy_score
+from matplotlib import pyplot as plt
+
 
 def window_data(dataset: np.ndarray, window_size: int) -> np.ndarray:
     """
@@ -70,3 +75,52 @@ def unpack_data() -> pd.DataFrame:
     all_bears.reset_index(inplace=True, drop=True)
 
     return all_bears
+
+
+def plot_model(
+    predicted: np.ndarray,
+    observed: np.ndarray,
+    title: str,
+    plot_output_path: Union[str, Path],
+    df_output_path: Union[str, Path]
+) -> None:
+    """
+    Utility function for summarizing and plotting a set of predictions and labels
+
+    Arguments:
+        predicted: array of probabilistic predictions
+        observed: array of observed labels
+        title: What to label the plot
+        plot_output_path: where to save the plot to
+        df_output_path: where to save the predictions to
+    """
+    # Predicted vs. observed
+    fpr, tpr, thresholds = roc_curve(observed, predicted)
+    auc_score = auc(fpr, tpr)
+
+    # Accuracy at best threshold
+    gmeans = np.sqrt(tpr * (1 - fpr))  # sqrt(Sensitivity * Specificity)
+    thresh_max = thresholds[np.argmax(gmeans)]  # Best threshold maximizes the gmean metric
+    accuracy = accuracy_score(
+        [1 if x > thresh_max else 0 for x in predicted],
+        observed)
+    logger.info(f"Using threshold of {thresh_max:.2f} returns accuracy of {accuracy:.2f}")
+
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2,
+             label='ROC curve (area = %0.2f)' % auc_score)
+    plt.text(0.05, 0.95, 'Accuracy = %0.2f' % accuracy)
+    plt.text(0.05, 0.9, 'Threshold = %0.2f' % thresh_max)
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(title)
+    plt.legend(loc="lower right")
+
+    plt.savefig(plot_output_path)
+
+    # Save the predictions
+    outputs = pd.DataFrame({'observed': observed, 'predicted': predicted})
+    outputs.to_csv(df_output_path, index=False)
