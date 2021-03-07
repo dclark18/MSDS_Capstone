@@ -39,14 +39,16 @@ class MultiVarLSTM(TimeSeriesPipeline):
         logger.info("Fitting the model")
 
         lstm_model = keras.models.Sequential()
-        lstm_model.add(keras.layers.LSTM(40))
+        lstm_model.add(keras.layers.LSTM(40, stateful=False))
         # lstm_model.add(keras.layers.Attention())
         lstm_model.add(keras.layers.Dense(1))
 
-        lstm_model.compile(optimizer='adam', loss='mse')
+        # Define arguments for model.compile call
+        optimizer_kwargs = {'optimizer': 'adam', 'loss': 'mse'}
 
         # Fit the model. Iterate by bear ID
-        predicted, observed = super().loop_and_fit(x_data, y_data, lstm_model)
+        predicted, observed = super().loop_and_fit(
+            x_data, y_data, lstm_model, optimizer_kwargs)
         return predicted, observed
 
     def evaluate_model(self, predicted: np.array, observed: np.array) -> None:
@@ -87,5 +89,5 @@ if __name__ == '__main__':
     all_bears = unpack_data()
 
     # Define pipeline and run
-    pipeline = MultiVarLSTM(all_bears, 5)
+    pipeline = MultiVarLSTM(all_bears, 15)
     pipeline.run()

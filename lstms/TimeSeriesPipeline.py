@@ -2,43 +2,12 @@ import pandas as pd
 import numpy as np
 from loguru import logger
 
-from typing import Tuple, Any
+from typing import Tuple, Any, Dict
 
 from sklearn.preprocessing import MinMaxScaler
 import keras
-import tensorflow.python.keras.backend as K
 
 from utils import window_data
-
-
-# Define reset weights method
-def reset_weights(
-    model: Any,
-    weights: np.ndarray
-) -> None:
-    """Reset the weights of a keras model
-
-    Branch behavior: since sequential models don't have weights before
-    fit is called, we need to re-initialize the layers manually
-
-    Args:
-        model - a Keras model
-        weights - the initial weights of the model. If accessible pre-fit,
-            simply set the model weights. Otherwise iteratively initialize the
-            model layer weights.
-    """
-    if weights:
-        model.set_weights(weights)
-    else:
-        session = K.get_session()
-        for layer in model.layers:
-            if isinstance(layer, keras.engine.network.Network):
-                reset_weights(layer, None)
-                continue
-            for v in layer.__dict__.values():
-                if hasattr(v, 'initializer'):
-                    if v.initializer is not None:
-                        v.initializer.run(session=session)
 
 
 class TimeSeriesPipeline:
@@ -90,7 +59,7 @@ class TimeSeriesPipeline:
         return x_data, wandering
 
     def loop_and_fit(self, x_data: pd.DataFrame, y_data: pd.Series,
-                     model: Any) -> Tuple[np.ndarray]:
+                     model: Any, optimizer_kwargs: Dict) -> Tuple[np.ndarray]:
         """
         This splits the incoming x_data into train and test sets,
         and does n-fold validation using each bear as a holdout once.
@@ -99,6 +68,7 @@ class TimeSeriesPipeline:
             - x_data: dataframe of x data to use
             - y_data: prediction variable
             - model: a compiled keras model object
+            - optimizer_kwargs: arguments to pass to model.compile
 
         Returns:
             array of predicted labels and originals
@@ -107,12 +77,9 @@ class TimeSeriesPipeline:
         predicted = np.array([])
         observed = np.array([])
 
-        try:
-            initial_weights = model.get_weights()
-        except ValueError:
-            # Sequential models don't have weights initially,
-            # need to reset manually
-            initial_weights = None
+        # No reset_weights functionality defined, or it doesn't work well.
+        model_copy = keras.models.clone_model(model)
+        model_copy.compile(**optimizer_kwargs)
 
         for holdout_id in x_data.index.unique():
 
@@ -161,7 +128,7 @@ class TimeSeriesPipeline:
                     ytrain_all = np.concatenate((ytrain_all, ytrain_subset))
 
             # Finally get around to fitting the model
-            model.fit(
+            model_copy.fit(
                 x_train_all,
                 ytrain_all,
                 validation_data=(x_test, y_test),
@@ -175,7 +142,9 @@ class TimeSeriesPipeline:
             observed = np.append(observed, y_test)
 
             # For a new holdout set, we need to reset the model
-            reset_weights(model, initial_weights)
+            # reset_weights(model, initial_weights)
+            model_copy = keras.models.clone_model(model)
+            model_copy.compile(**optimizer_kwargs)
 
         return predicted, observed
 
