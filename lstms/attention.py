@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
+import os
 
 from loguru import logger
 from typing import Tuple
@@ -7,7 +9,8 @@ from typing import Tuple
 from tensorflow import keras
 from keras import backend as K
 
-from multivar_lstm import MultiVarLSTM, window_data, unpack_data
+from TimeSeriesPipeline import TimeSeriesPipeline
+from utils import unpack_data, plot_model
 
 
 def attention_simple(inputs: np.ndarray, n_time: int) -> keras.layers.Lambda:
@@ -30,7 +33,7 @@ def attention_simple(inputs: np.ndarray, n_time: int) -> keras.layers.Lambda:
     return output_flat
 
 
-class AttentionModel(MultiVarLSTM):
+class AttentionModel(TimeSeriesPipeline):
 
     def __init__(self, raw_data: pd.DataFrame, window_size: int):
         """
@@ -39,18 +42,20 @@ class AttentionModel(MultiVarLSTM):
         """
         super().__init__(raw_data, window_size)
 
-    def preprocess(self) -> Tuple[np.ndarray]:
+    def preprocess(self) -> Tuple[pd.DataFrame, pd.Series]:
         return super().preprocess()
 
     def fit_model(self,
-                  x_train: np.ndarray,
-                  y_train: np.ndarray,
-                  x_test: np.ndarray,
-                  y_test: np.ndarray) -> keras.models.Model:
+                  x_data: pd.DataFrame,
+                  y_data: pd.Series) -> Tuple[np.ndarray]:
+        """
+        Define and fit an attention model, and return the labels.
+        """
 
         logger.info("Fitting the model")
 
-        input_layer = keras.layers.Input((self.window_size, x_train.shape[-1]))
+        # Defines the attention model
+        input_layer = keras.layers.Input((self.window_size, x_data.shape[-1]))
         expanded = keras.layers.Dense(128, activation='relu')(input_layer)
         attended = attention_simple(expanded, self.window_size)
         fc1 = keras.layers.Dense(256, activation='relu')(attended)
@@ -59,39 +64,33 @@ class AttentionModel(MultiVarLSTM):
         attention_model = keras.models.Model(input_layer, output)
         attention_model.compile(optimizer='adam', loss='mse')
 
-        for bear_id, idcs in self.bear_ids_dict.items():
+        predicted, observed = super().loop_and_fit(x_data, y_data, attention_model)
 
-            # Reshape data for sequential model
-            logger.info(f"Training on bear {bear_id}")
+        return predicted, observed
 
-            bear_x_data = x_train[idcs]
-            bear_y_data = y_train[idcs]
-
-            xtrain_reshaped = window_data(bear_x_data, self.window_size)
-            # No reshaping of y, all we do is grab
-            # every 5th value if the windowsize = 5
-            ytrain_reshaped = bear_y_data[(self.window_size - 1):]
-
-            attention_model.fit(xtrain_reshaped,
-                                ytrain_reshaped,
-                                validation_data=(x_test, y_test),
-                                epochs=20)
-
-        return attention_model
-
-    def predict_model(self,
-                      model: keras.models.Model,
-                      x_test: np.ndarray,
-                      y_test: np.ndarray) -> None:
-
-        super().predict_model(model, x_test, y_test)
+    def evaluate_model(self, predicted: np.array, observed: np.array) -> None:
+        """
+        Given labels, return the accuracy and a ROC curve.
+        """
+        output_path = Path(os.path.abspath(__file__)).parent
+        df_path = output_path / 'attention_predictions.csv'
+        plot_path = output_path / 'attention_plot.png'
+        plot_model(
+            predicted=predicted,
+            observed=observed,
+            title=f'ROC Curve for Attention Model, Window Size of {self.window_size}',
+            df_output_path=df_path,
+            plot_output_path=plot_path)
 
     def run(self) -> None:
+        """
+        Run the Attention model
+        """
 
-        x_train, x_test, y_train, y_test = self.preprocess()
-        attention_model = self.fit_model(x_train, y_train, x_test, y_test)
+        x_data, y_data = self.preprocess()
 
-        self.predict_model(attention_model, x_test, y_test)
+        predicted, observed = self.fit_model(x_data, y_data)
+        self.evaluate_model(predicted, observed)
 
 
 if __name__ == '__main__':
