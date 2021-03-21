@@ -2,17 +2,16 @@ import pandas as pd
 import numpy as np
 from loguru import logger
 
-from typing import Tuple, Any, Dict
+from typing import Sequence
 
 from sklearn.preprocessing import MinMaxScaler
-import keras
 
 from utils import window_data
 
 
 class TimeSeriesPipeline:
 
-    def __init__(self, raw_data: pd.DataFrame, window_size: int):
+    def __init__(self, raw_data: pd.DataFrame, window_size: int, test_bear_id: int):
         """
         Base class for a data pipeline. Inputs are raw data and the window size.
 
@@ -22,8 +21,9 @@ class TimeSeriesPipeline:
 
         self.raw_data = raw_data
         self.window_size = window_size
+        self.test_bear_id = test_bear_id
 
-    def preprocess(self) -> Tuple[pd.DataFrame, pd.Series]:
+    def preprocess(self) -> Sequence[np.ndarray]:
         """
         Minimal preprocessing.
 
@@ -31,9 +31,12 @@ class TimeSeriesPipeline:
         - Drops columns not needed for analysis
         - memorize which bear IDs belong
           to which subsets of the data. Used for holdout later
+        - splits into test and train, based on the input test bear ID
+        - windows data
+        - scales data
 
         Returns:
-            x and y data as numpy arrays
+            xtrain, xtest, ytrain, ytest
         """
 
         # Need to drop non-observed points
@@ -56,102 +59,53 @@ class TimeSeriesPipeline:
         x_data = x_data.reset_index(drop=True).set_index('Bear_ID')
         wandering.index = x_data.index
 
-        return x_data, wandering
+        # Use single bear as holdout
+        x_train = x_data.drop(self.test_bear_id)
+        y_train = wandering.drop(self.test_bear_id)
+        x_test = x_data.loc[self.test_bear_id]
+        y_test = wandering.loc[self.test_bear_id]
 
-    def loop_and_fit(self, x_data: pd.DataFrame, y_data: pd.Series,
-                     model: Any, optimizer_kwargs: Dict = None) -> Tuple[np.ndarray]:
-        """
-        This splits the incoming x_data into train and test sets,
-        and does n-fold validation using each bear as a holdout once.
+        # Fit our scaler on the full training set here
+        m = MinMaxScaler()
+        m.fit(x_train)
 
-        Args:
-            - x_data: dataframe of x data to use
-            - y_data: prediction variable
-            - model: a compiled keras model object
-            - optimizer_kwargs: arguments to pass to model.compile
+        # Test can be scaled here, since it's a continuous time series
+        x_test = window_data(m.transform(x_test), self.window_size)
+        y_test = y_test.values[(self.window_size - 1):]
 
-        Returns:
-            array of predicted labels and originals
-        """
+        # create stacks of windows to scale+fit the model
+        # Use a loop to avoid overlapping windows from different time series
+        x_train_all = None
+        ytrain_all = None
+        for bear_id in x_train.index.unique():
 
-        predicted = np.array([])
-        observed = np.array([])
+            xtrain_subset = x_train.loc[bear_id]
+            ytrain_subset = y_train.loc[bear_id].values[(self.window_size - 1):]
 
-        # No reset_weights functionality defined, or it doesn't work well.
-        model_copy = keras.models.clone_model(model)
-        if optimizer_kwargs is None:
-            optimizer_kwargs = {}
-        model_copy.compile(**optimizer_kwargs)
+            # Scale and window training data
+            xtrain_scaled = window_data(
+                m.transform(xtrain_subset), self.window_size)
 
-        for holdout_id in x_data.index.unique():
+            if x_train_all is None:
+                x_train_all = xtrain_scaled
+            else:
+                x_train_all = np.concatenate((x_train_all, xtrain_scaled))
 
-            logger.info(f"Holdout bear: {holdout_id}")
+            if ytrain_all is None:
+                ytrain_all = ytrain_subset
+            else:
+                ytrain_all = np.concatenate((ytrain_all, ytrain_subset))
 
-            # Holdout ID is the one bear ID to be used as a holdout set
-            x_test = x_data.loc[holdout_id]
-            y_test = y_data.loc[holdout_id]
-
-            # Train is everything else, but needs to be mapped to the right ID
-            x_train = x_data.drop(holdout_id)
-            y_train = y_data.drop(holdout_id)
-
-            # Fit the min-max scaler here
-            m = MinMaxScaler()
-            m.fit(x_train)
-
-            # Test scaled here and windowed, train scaled in inner loop
-            x_test = m.transform(x_test)
-            x_test = window_data(x_test, self.window_size)
-
-            # y test vals come out as numpy array
-            y_test = y_test.values[(self.window_size - 1):]
-
-            # Inner loop: go over each remaining ID,
-            # create stacks of windows to scale+fit the model
-            x_train_all = None
-            ytrain_all = None
-            for bear_id in x_train.index.unique():
-
-                xtrain_subset = x_train.loc[bear_id]
-                ytrain_subset = y_train.loc[bear_id].values[(self.window_size - 1):]
-
-                # Scale and window training data
-                xtrain_scaled = window_data(
-                    m.transform(xtrain_subset), self.window_size)
-
-                if x_train_all is None:
-                    x_train_all = xtrain_scaled
-                else:
-                    x_train_all = np.concatenate((x_train_all, xtrain_scaled))
-
-                if ytrain_all is None:
-                    ytrain_all = ytrain_subset
-                else:
-                    ytrain_all = np.concatenate((ytrain_all, ytrain_subset))
-
-            # Finally get around to fitting the model
-            model_copy.fit(
-                x_train_all,
-                ytrain_all,
-                validation_data=(x_test, y_test),
-                epochs=20,
-                shuffle=False)
-
-            # Predict out labels, compare to observed
-            predictions = model.predict(x_test)
-
-            predicted = np.append(predicted, predictions)
-            observed = np.append(observed, y_test)
-
-            # For a new holdout set, we need to reset the model
-            # reset_weights(model, initial_weights)
-            model_copy = keras.models.clone_model(model)
-            model_copy.compile(**optimizer_kwargs)
-
-        return predicted, observed
+        return x_train_all, x_test, ytrain_all, y_test
 
     def fit_model(self, *args, **kwargs):
         """
         Each pipeline needs its own fit call.
+        """
+        raise NotImplementedError
+
+    def evaluate_model(self, *args, **kwargs):
+        """
+        Each pipeline needs its own evaluate call
         """
         raise NotImplementedError
