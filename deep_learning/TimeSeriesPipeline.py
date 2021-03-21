@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from loguru import logger
 
 from typing import Sequence
 
@@ -101,11 +100,5 @@ class TimeSeriesPipeline:
     def fit_model(self, *args, **kwargs):
         """
         Each pipeline needs its own fit call.
-        """
-        raise NotImplementedError
-
-    def evaluate_model(self, *args, **kwargs):
-        """
-        Each pipeline needs its own evaluate call
         """
         raise NotImplementedError

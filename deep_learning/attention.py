@@ -35,19 +35,21 @@ def attention_simple(inputs: np.ndarray, n_time: int) -> keras.layers.Lambda:
 
 class AttentionModel(TimeSeriesPipeline):
 
-    def __init__(self, raw_data: pd.DataFrame, window_size: int):
+    def __init__(self, raw_data: pd.DataFrame, window_size: int, test_bear_id: int):
         """
-        This class inherits from MultiVarLSTM, so we can reuse the
+        This class inherits from TimeSeriesPipeline, so we can reuse the
         preprocessing and plotting methods.
         """
-        super().__init__(raw_data, window_size)
+        super().__init__(raw_data, window_size, test_bear_id)
 
-    def preprocess(self) -> Tuple[pd.DataFrame, pd.Series]:
+    def preprocess(self) -> Tuple[np.ndarray]:
         return super().preprocess()
 
     def fit_model(self,
-                  x_data: pd.DataFrame,
-                  y_data: pd.Series) -> Tuple[np.ndarray]:
+                  x_train: np.ndarray,
+                  x_test: np.ndarray,
+                  y_train: np.ndarray,
+                  y_test: np.ndarray) -> Tuple[np.ndarray]:
         """
         Define and fit an attention model, and return the labels.
         """
@@ -55,49 +57,64 @@ class AttentionModel(TimeSeriesPipeline):
         logger.info("Fitting the model")
 
         # Defines the attention model
-        input_layer = keras.layers.Input((self.window_size, x_data.shape[-1]))
+        input_layer = keras.layers.Input((self.window_size, x_train.shape[-1]))
         expanded = keras.layers.Dense(128, activation='relu')(input_layer)
         attended = attention_simple(expanded, self.window_size)
         fc1 = keras.layers.Dense(256, activation='relu')(attended)
         fc2 = keras.layers.Dense(312, activation='relu')(fc1)
         output = keras.layers.Dense(1, activation='sigmoid')(fc2)
         attention_model = keras.models.Model(input_layer, output)
+        attention_model.compile(optimizer='adam', loss='mse')
 
-        optimizer_kwargs = {'optimizer': 'adam', 'loss': 'mse'}
+        attention_model.fit(
+            x_train,
+            y_train,
+            validation_data=(x_test, y_test),
+            epochs=20)
 
-        predicted, observed = super().loop_and_fit(x_data, y_data,
-                                                   attention_model, optimizer_kwargs)
+        # Get predictions
+        preds = attention_model.predict(x_test)
 
-        return predicted, observed
+        return preds, y_test
 
-    def evaluate_model(self, predicted: np.array, observed: np.array) -> None:
+    def save_results(self, predicted: np.array, observed: np.array) -> None:
         """
         Given labels, return the accuracy and a ROC curve.
         """
         output_path = Path(os.path.abspath(__file__)).parent
-        df_path = output_path / 'attention_predictions.csv'
-        plot_path = output_path / 'attention_plot.png'
-        plot_model(
-            predicted=predicted,
-            observed=observed,
-            title=f'ROC Curve for Attention Model, Window Size of {self.window_size}',
-            df_output_path=df_path,
-            plot_output_path=plot_path)
+        df_path = output_path / f'attention_predictions_{self.test_bear_id}.csv'
+        logger.info(f"Saving results to {df_path}")
 
-    def run(self) -> None:
+        # plot_model(
+        #     predicted=predicted,
+        #     observed=observed,
+        #     title=f'ROC Curve for Attention Model, Window Size of {self.window_size}',
+        #     df_output_path=df_path,
+        #     plot_output_path=plot_path)
+
+    def run(self, output_dir: Path) -> None:
         """
-        Run the Attention model
+        Run the Attention model, and save predictions
         """
 
         x_data, y_data = self.preprocess()
 
         predicted, observed = self.fit_model(x_data, y_data)
-        self.evaluate_model(predicted, observed)
+
+        self.save_results(predicted, observed)
 
 
 if __name__ == '__main__':
 
+    # For parallel runs, use task id from SLURM array job.
+    # Passed in via env variable
+    test_bear_id = os.getenv("TASK_ID")
+
+    if not test_bear_id:
+        # Empty variable if not run in a parallel setting (interactive mode)
+        test_bear_id = 5  # Hardcode to a random value
+
     all_bears = unpack_data()
 
-    pipeline = AttentionModel(all_bears, 15)
+    pipeline = AttentionModel(all_bears, 15, test_bear_id)
     pipeline.run()
