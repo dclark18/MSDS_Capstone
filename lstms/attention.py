@@ -62,9 +62,11 @@ class AttentionModel(TimeSeriesPipeline):
         fc2 = keras.layers.Dense(312, activation='relu')(fc1)
         output = keras.layers.Dense(1, activation='sigmoid')(fc2)
         attention_model = keras.models.Model(input_layer, output)
-        attention_model.compile(optimizer='adam', loss='mse')
 
-        predicted, observed = super().loop_and_fit(x_data, y_data, attention_model)
+        optimizer_kwargs = {'optimizer': 'adam', 'loss': 'mse'}
+
+        predicted, observed = super().loop_and_fit(x_data, y_data,
+                                                   attention_model, optimizer_kwargs)
 
         return predicted, observed
 

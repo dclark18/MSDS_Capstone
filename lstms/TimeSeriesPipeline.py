@@ -59,7 +59,7 @@ class TimeSeriesPipeline:
         return x_data, wandering
 
     def loop_and_fit(self, x_data: pd.DataFrame, y_data: pd.Series,
-                     model: Any, optimizer_kwargs: Dict) -> Tuple[np.ndarray]:
+                     model: Any, optimizer_kwargs: Dict = None) -> Tuple[np.ndarray]:
         """
         This splits the incoming x_data into train and test sets,
         and does n-fold validation using each bear as a holdout once.
@@ -79,6 +79,8 @@ class TimeSeriesPipeline:
 
         # No reset_weights functionality defined, or it doesn't work well.
         model_copy = keras.models.clone_model(model)
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
         model_copy.compile(**optimizer_kwargs)
 
         for holdout_id in x_data.index.unique():
