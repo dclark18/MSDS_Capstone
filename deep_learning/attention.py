@@ -10,7 +10,7 @@ from tensorflow import keras
 from keras import backend as K
 
 from TimeSeriesPipeline import TimeSeriesPipeline
-from utils import unpack_data, plot_model
+from utils import unpack_data
 
 
 def attention_simple(inputs: np.ndarray, n_time: int) -> keras.layers.Lambda:
@@ -108,13 +108,18 @@ if __name__ == '__main__':
 
     # For parallel runs, use task id from SLURM array job.
     # Passed in via env variable
-    test_bear_id = os.getenv("TASK_ID")
+    test_bear_idx = int(os.getenv("SLURM_ARRAY_JOB_ID"))
 
-    if not test_bear_id:
+    if not test_bear_idx:
         # Empty variable if not run in a parallel setting (interactive mode)
-        test_bear_id = 5  # Hardcode to a random value
+        test_bear_idx = 0  # Hardcode to a random value
 
     all_bears = unpack_data()
+
+    # Sort the ids and grab the index
+    ids = np.sort(all_bears.Bear_ID.unique())
+    test_bear_id = ids[test_bear_idx]
+    logger.debug(f"Test index: {test_bear_id}")
 
     pipeline = AttentionModel(all_bears, 15, test_bear_id)
     pipeline.run()
