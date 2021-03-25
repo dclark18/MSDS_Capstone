@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 
 import os
+import sys
 from pathlib import Path
 from loguru import logger
 from typing import Tuple
@@ -14,25 +15,23 @@ from utils import unpack_data, plot_model
 
 class MultiVarLSTM(TimeSeriesPipeline):
 
-    def __init__(self, raw_data: pd.DataFrame, window_size: int):
+    def __init__(self, raw_data: pd.DataFrame, window_size: int, test_bear_idx: int):
 
-        super().__init__(raw_data, window_size)
+        super().__init__(raw_data, window_size, test_bear_idx)
 
-    def preprocess(self) -> Tuple[pd.DataFrame, pd.Series]:
-        """
-        Create the train set and the wandering variable
-        """
-        logger.info("Starting preprocessing")
+    def preprocess(self) -> Tuple[np.ndarray]:
         return super().preprocess()
 
     def fit_model(self,
-                  x_data: pd.DataFrame,
-                  y_data: pd.Series) -> Tuple[np.ndarray]:
+                  x_train: np.ndarray,
+                  x_test: np.ndarray,
+                  y_train: np.ndarray,
+                  y_test: np.ndarray) -> Tuple[np.ndarray]:
         """
         Fit the multivariate LSTM, and generate predictions.
 
         Args:
-           x_data, y_data: the results from preprocessing
+           x_train, x_test, y_train, y_test: train test split data
 
         Output: arrays representing predicted and observed classifications
         """
@@ -40,41 +39,51 @@ class MultiVarLSTM(TimeSeriesPipeline):
 
         lstm_model = keras.models.Sequential()
         lstm_model.add(keras.layers.LSTM(40, stateful=False))
-        # lstm_model.add(keras.layers.Attention())
         lstm_model.add(keras.layers.Dense(1))
+        lstm_model.compile(optimizer='adam', loss='mse')
 
-        # Define arguments for model.compile call
-        optimizer_kwargs = {'optimizer': 'adam', 'loss': 'mse'}
+        lstm_model.fit(
+            x_train,
+            y_train,
+            validation_data=(x_test, y_test),
+            epochs=20)
 
-        # Fit the model. Iterate by bear ID
-        predicted, observed = super().loop_and_fit(
-            x_data, y_data, lstm_model, optimizer_kwargs)
-        return predicted, observed
+        predicted = lstm_model.predict(x_test)
 
-    def evaluate_model(self, predicted: np.array, observed: np.array) -> None:
+        return predicted[:, 0], y_test
+
+    def save_results(self, predicted: np.array, observed: np.array, output_path: str) -> None:
         """
         Given labels, return the accuracy and a ROC curve.
         """
 
-        output_path = Path(os.path.abspath(__file__)).parent
-        df_path = output_path / 'lstm_predictions.csv'
-        plot_path = output_path / 'lstm_plot.png'
-        plot_model(
-            predicted=predicted,
-            observed=observed,
-            title=f'ROC Curve for LSTM Model, Window Size of {self.window_size}',
-            df_output_path=df_path,
-            plot_output_path=plot_path)
+        df_path = Path(output_path) / f'attention_predictions_{self.test_bear_id}.csv'
+        logger.info(f"Saving results to {df_path}")
 
-    def run(self) -> None:
+        output_df = pd.DataFrame({
+            'observed': observed,
+            'predicted': predicted,
+            'bear_id': self.test_bear_id})
+        output_df.to_csv(df_path, index=False)
+
+        # output_df.to_csv(df_path, index=False)
+        # plot_path = output_path / 'lstm_plot.png'
+        # plot_model(
+        #     predicted=predicted,
+        #     observed=observed,
+        #     title=f'ROC Curve for LSTM Model, Window Size of {self.window_size}',
+        #     df_output_path=df_path,
+        #     plot_output_path=plot_path)
+
+    def run(self, output_path: str) -> None:
         """
         Run the LSTM
         """
 
-        x_data, y_data = self.preprocess()
+        x_train, x_test, y_train, y_test = self.preprocess()
 
-        predicted, observed = self.fit_model(x_data, y_data)
-        self.evaluate_model(predicted, observed)
+        predicted, observed = self.fit_model(x_train, x_test, y_train, y_test)
+        self.save_results(predicted, observed, output_path)
 
 
 if __name__ == '__main__':
@@ -86,8 +95,26 @@ if __name__ == '__main__':
 
     """
 
+    output_path = sys.argv[1]  # Where to save outputs
+    logger.info(f"Outputs will be saved to {output_path}")
+
+    # For parallel runs, use task id from SLURM array job.
+    # Passed in via env variable
+    try:
+        test_bear_idx = int(os.getenv("SLURM_ARRAY_TASK_ID"))
+        logger.info(f"Index: {test_bear_idx}")
+    except TypeError:
+        # Empty variable if not run in a parallel setting (interactive mode)
+        logger.warning("Non-interactive setting, index is set to 0")
+        test_bear_idx = 0  # Hardcode to a random value
+
     all_bears = unpack_data()
 
-    # Define pipeline and run
-    pipeline = MultiVarLSTM(all_bears, 15)
-    pipeline.run()
+    # Sort the ids and grab the index
+    ids = np.sort(all_bears.Bear_ID.unique())
+    test_bear_id = ids[test_bear_idx]
+    logger.debug(f"Test index: {test_bear_id}")
+
+    pipeline = MultiVarLSTM(all_bears, 15, test_bear_id)
+    pipeline.run(output_path)
+

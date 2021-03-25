@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import os
+import sys
 
 from loguru import logger
 from typing import Tuple
@@ -75,15 +76,21 @@ class AttentionModel(TimeSeriesPipeline):
         # Get predictions
         preds = attention_model.predict(x_test)
 
-        return preds, y_test
+        return preds[:, 0], y_test
 
-    def save_results(self, predicted: np.array, observed: np.array) -> None:
+    def save_results(self, predicted: np.array, observed: np.array, output_dir: str) -> None:
         """
-        Given labels, return the accuracy and a ROC curve.
+        Given labels, save the results out
         """
-        output_path = Path(os.path.abspath(__file__)).parent
-        df_path = output_path / f'attention_predictions_{self.test_bear_id}.csv'
+        df_path = Path(output_dir) / f'attention_predictions_{self.test_bear_id}.csv'
         logger.info(f"Saving results to {df_path}")
+
+        output_df = pd.DataFrame({
+            'observed': observed,
+            'predicted': predicted,
+            'bear_id': self.test_bear_id})
+
+        output_df.to_csv(df_path, index=False)
 
         # plot_model(
         #     predicted=predicted,
@@ -97,21 +104,26 @@ class AttentionModel(TimeSeriesPipeline):
         Run the Attention model, and save predictions
         """
 
-        x_data, y_data = self.preprocess()
+        x_train, x_test, y_train, y_test = self.preprocess()
 
-        predicted, observed = self.fit_model(x_data, y_data)
+        predicted, observed = self.fit_model(x_train, x_test, y_train, y_test)
 
-        self.save_results(predicted, observed)
+        self.save_results(predicted, observed, output_dir)
 
 
 if __name__ == '__main__':
 
+    output_path = sys.argv[1]  # Where to save outputs
+    logger.info(f"Outputs will be saved to {output_path}")
+
     # For parallel runs, use task id from SLURM array job.
     # Passed in via env variable
-    test_bear_idx = int(os.getenv("SLURM_ARRAY_JOB_ID"))
-
-    if not test_bear_idx:
+    try:
+        test_bear_idx = int(os.getenv("SLURM_ARRAY_TASK_ID"))
+        logger.info(f"Index: {test_bear_idx}")
+    except TypeError:
         # Empty variable if not run in a parallel setting (interactive mode)
+        logger.warning("Non-interactive setting, index is set to 0")
         test_bear_idx = 0  # Hardcode to a random value
 
     all_bears = unpack_data()
@@ -122,4 +134,4 @@ if __name__ == '__main__':
     logger.debug(f"Test index: {test_bear_id}")
 
     pipeline = AttentionModel(all_bears, 15, test_bear_id)
-    pipeline.run()
+    pipeline.run(output_path)
