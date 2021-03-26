@@ -31,4 +31,4 @@ if __name__ == '__main__':
         plot_output_path=Path(output_path) / f"diagnostics/{title}.png")
 
     # Save compiled data frame
-    df.to_csv(Path(output_path) / "summarized.csv")
+    df.to_csv(Path(output_path) / "diagnostics/summarized.csv")
