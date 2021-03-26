@@ -57,7 +57,7 @@ class MultiVarLSTM(TimeSeriesPipeline):
         Given labels, return the accuracy and a ROC curve.
         """
 
-        df_path = Path(output_path) / f'attention_predictions_{self.test_bear_id}.csv'
+        df_path = Path(output_path) / f'lstm_predictions_{self.test_bear_id}.csv'
         logger.info(f"Saving results to {df_path}")
 
         output_df = pd.DataFrame({
