@@ -81,8 +81,7 @@ def plot_model(
     predicted: np.ndarray,
     observed: np.ndarray,
     title: str,
-    plot_output_path: Union[str, Path],
-    df_output_path: Union[str, Path]
+    plot_output_path: Union[str, Path]
 ) -> None:
     """
     Utility function for summarizing and plotting a set of predictions and labels
@@ -120,7 +119,3 @@ def plot_model(
     plt.legend(loc="lower right")
 
     plt.savefig(plot_output_path)
-
-    # Save the predictions
-    outputs = pd.DataFrame({'observed': observed, 'predicted': predicted})
-    outputs.to_csv(df_output_path, index=False)
