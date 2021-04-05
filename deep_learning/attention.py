@@ -134,5 +134,5 @@ if __name__ == '__main__':
     test_bear_id = ids[test_bear_idx]
     logger.debug(f"Test index: {test_bear_id}")
 
-    pipeline = AttentionModel(all_bears, 1, test_bear_id)
+    pipeline = AttentionModel(all_bears, 5, test_bear_id)
     pipeline.run(output_path)
