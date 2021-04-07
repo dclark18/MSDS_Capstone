@@ -118,4 +118,7 @@ def plot_model(
     plt.title(title)
     plt.legend(loc="lower right")
 
+    if not os.path.exists(plot_base_path := os.path.dirname(plot_output_path)):
+        logger.warning(f"{plot_base_path} does not exist, creating")
+        os.makedirs(plot_base_path)
     plt.savefig(plot_output_path)

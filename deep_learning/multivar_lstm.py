@@ -42,11 +42,15 @@ class MultiVarLSTM(TimeSeriesPipeline):
         lstm_model.add(keras.layers.Dense(1))
         lstm_model.compile(optimizer='adam', loss='mse')
 
+        # Stop the model fit procedure if no loss gain in 3 epochs
+        es = keras.callbacks.EarlyStopping(monitor='loss', patience=3)
+
         lstm_model.fit(
             x_train,
             y_train,
             validation_data=(x_test, y_test),
-            epochs=20)
+            epochs=20,
+            callbacks=[es])
 
         predicted = lstm_model.predict(x_test)
 
@@ -65,15 +69,6 @@ class MultiVarLSTM(TimeSeriesPipeline):
             'predicted': predicted,
             'bear_id': self.test_bear_id})
         output_df.to_csv(df_path, index=False)
-
-        # output_df.to_csv(df_path, index=False)
-        # plot_path = output_path / 'lstm_plot.png'
-        # plot_model(
-        #     predicted=predicted,
-        #     observed=observed,
-        #     title=f'ROC Curve for LSTM Model, Window Size of {self.window_size}',
-        #     df_output_path=df_path,
-        #     plot_output_path=plot_path)
 
     def run(self, output_path: str) -> None:
         """
@@ -96,6 +91,10 @@ if __name__ == '__main__':
     """
 
     output_path = sys.argv[1]  # Where to save outputs
+    if not os.path.exists(output_path):
+        # Make the directory
+        logger.warning(f"{output_path} does not exist, creating")
+        os.makedirs(output_path)
     logger.info(f"Outputs will be saved to {output_path}")
 
     # For parallel runs, use task id from SLURM array job.
@@ -115,6 +114,6 @@ if __name__ == '__main__':
     test_bear_id = ids[test_bear_idx]
     logger.debug(f"Test index: {test_bear_id}")
 
-    pipeline = MultiVarLSTM(all_bears, 15, test_bear_id)
+    pipeline = MultiVarLSTM(all_bears, 5, test_bear_id)
     pipeline.run(output_path)
 
